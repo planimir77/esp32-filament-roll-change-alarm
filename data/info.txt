@@ -1,0 +1,1 @@
+after adding a new file go to the PlatformIO icon then esp32dev/Platform/Upload Filesystem Image

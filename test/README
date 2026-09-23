@@ -1,0 +1,40 @@
+﻿Unit tests (no ESP32 or network connection required)
+===================================================
+
+Run from the project root:
+    python test/run_tests.py
+
+Requirements:
+- Python 3
+- Node.js 18+
+- g++ / clang++ on PATH, or a local Zig C++ compiler:
+    python -m pip install --target .pio/test-tools ziglang==0.16.0
+
+The runner uses .pio for compiled binaries and compiler caches.
+It exits with a nonzero status on compilation errors or failed assertions.
+These host tests use a standalone runner, not "pio test".
+
+Coverage:
+- Actual MuteTimer.h used by main.cpp: idle state, 30-second pause,
+  ceiling of remaining seconds, expiry boundary, repeated requests,
+  reactivation and uint32_t millis() overflow.
+- Actual data/index.js in an isolated mock DOM: lamp and buzzer states,
+  countdown, lamp off during mute, POST /mute, request failures,
+  lost connection and recovery, notification text/age, uptime formatting,
+  polling and request timeout cleanup.
+
+Commands for individual suites:
+    node --test test/unit/dashboard.test.cjs
+    (The C++ suite is compiled and run by test/run_tests.py.)
+
+Firmware compile check:
+    pio run -e esp32dev
+
+Limitations:
+These tests do not exercise physical GPIO, button interrupts, FreeRTOS
+scheduling, Wi-Fi, SPIFFS or real ntfy delivery. The dashboard uses fake
+HTTP replies; HTTP routes and rendering in a real browser are not covered.
+Verify these separately on the ESP32. Tests do not flash the board or send
+notifications.
+
+MuteButton coverage: short pulses, held input at startup, stable press/release, release bounce and millis overflow. Physical button is polled; hold for at least 100 ms for reliable detection with the 20 ms loop interval.
