@@ -53,6 +53,9 @@ int patternStep = 0;
 const bool  STEP_IS_ON[4]     = { true, false, true, false };
 const unsigned long STEP_DURATION_MS[4] = { BEEP_MS, SHORT_PAUSE_MS, BEEP_MS, LONG_PAUSE_MS };
 
+// ==== WIFI RECONNECT ====
+unsigned long lastWifiReconnectAttempt = 0;
+const unsigned long WIFI_RECONNECT_INTERVAL_MS = 10000;
 
 AsyncWebServer server(80);
 
@@ -255,7 +258,12 @@ void setup()
     return;
   }
 
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
   WiFi.onEvent(onWifiGotIP, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+
   connectWiFi();
 
   notificationQueue = xQueueCreate(4, sizeof(Notification));
@@ -353,6 +361,15 @@ void sendPushNotification(const char* message, bool lowPriority) {
 
 void loop()
 {
+  unsigned long now = millis();
+
+  if (WiFi.status() != WL_CONNECTED &&
+      now - lastWifiReconnectAttempt >= WIFI_RECONNECT_INTERVAL_MS) {
+
+    lastWifiReconnectAttempt = now;
+    Serial.println("WiFi disconnected — reconnecting...");
+    WiFi.reconnect();
+  }
   portENTER_CRITICAL(&stateMux);
   bool announceIP = wifiIpNotificationPending;
   wifiIpNotificationPending = false;
@@ -367,7 +384,7 @@ void loop()
       portEXIT_CRITICAL(&stateMux);
     }
   }
-  unsigned long now = millis();
+  
   bool buttonPressed = muteButton.update(now, digitalRead(MUTE_PIN) == HIGH);
   portENTER_CRITICAL(&stateMux);
   bool webRequested = muteRequested;
