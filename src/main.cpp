@@ -28,6 +28,7 @@
 #include <esp_timer.h>
 #include <MuteTimer.h>
 #include <MuteButton.h>
+#include <NimBLEDevice.h>
 #include <secrets.h>
 
 const char* NTFY_TOPIC = "rast3d-pla"; // pick a unique name, subscribe to it in the ntfy app
@@ -71,6 +72,25 @@ struct Notification {
   bool lowPriority;
 };
 bool wifiIpNotificationPending = false;
+
+// ==== BLUETOOTH LOW ENERGY ====
+const char* BLE_SERVICE_UUID =
+    "7b3e0001-7d1f-4f6a-9d2b-3c4e5f607182";
+
+const char* BLE_STATUS_UUID =
+    "7b3e0002-7d1f-4f6a-9d2b-3c4e5f607182";
+
+const char* BLE_EVENT_UUID =
+    "7b3e0003-7d1f-4f6a-9d2b-3c4e5f607182";
+
+NimBLEServer* bleServer = nullptr;
+NimBLECharacteristic* bleStatusCharacteristic = nullptr;
+NimBLECharacteristic* bleEventCharacteristic = nullptr;
+
+unsigned long lastBleStatusUpdate = 0;
+
+bool bleWifiStateKnown = false;
+bool lastBleWifiConnected = false;
 
 void onWifiGotIP(WiFiEvent_t) {
   portENTER_CRITICAL(&stateMux);
@@ -241,6 +261,93 @@ void notificationWorker(void*) {
   }
 }
 
+void sendBleEvent(const char* eventText) {
+  if (bleEventCharacteristic == nullptr) {
+    return;
+  }
+
+  bleEventCharacteristic->setValue(eventText);
+
+  if (bleServer != nullptr &&
+      bleServer->getConnectedCount() > 0) {
+    bleEventCharacteristic->notify();
+  }
+
+  Serial.print("BLE event: ");
+  Serial.println(eventText);
+}
+
+
+void updateBleStatus(unsigned long now,
+                     bool lampOn,
+                     bool muted) {
+  if (bleStatusCharacteristic == nullptr) {
+    return;
+  }
+
+  bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  int rssi = wifiConnected ? WiFi.RSSI() : 0;
+  bool buzzerActive = lampOn && !muted;
+
+  char statusText[160];
+
+  snprintf(
+      statusText,
+      sizeof(statusText),
+      "UP=%lu;WIFI=%d;RSSI=%d;HEAP=%u;LAMP=%d;BUZZER=%d;MUTED=%d",
+      now / 1000UL,
+      wifiConnected ? 1 : 0,
+      rssi,
+      (unsigned int)ESP.getFreeHeap(),
+      lampOn ? 1 : 0,
+      buzzerActive ? 1 : 0,
+      muted ? 1 : 0
+  );
+
+  bleStatusCharacteristic->setValue(statusText);
+}
+
+
+void setupBle() {
+  NimBLEDevice::init("FilamentAlarm");
+
+  bleServer = NimBLEDevice::createServer();
+
+  // След прекъсване телефонът отново ще може да намери ESP32.
+  bleServer->advertiseOnDisconnect(true);
+
+  NimBLEService* service =
+      bleServer->createService(BLE_SERVICE_UUID);
+
+  bleStatusCharacteristic =
+      service->createCharacteristic(
+          BLE_STATUS_UUID,
+          NIMBLE_PROPERTY::READ
+      );
+
+  bleEventCharacteristic =
+      service->createCharacteristic(
+          BLE_EVENT_UUID,
+          NIMBLE_PROPERTY::READ |
+          NIMBLE_PROPERTY::NOTIFY
+      );
+
+  bleStatusCharacteristic->setValue("STARTING");
+  bleEventCharacteristic->setValue("BOOT");
+
+  service->start();
+
+  NimBLEAdvertising* advertising =
+      NimBLEDevice::getAdvertising();
+
+  advertising->setName("FilamentAlarm");
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->enableScanResponse(true);
+  advertising->start();
+
+  Serial.println("BLE started: FilamentAlarm");
+}
+
 void setup()
 {
   Wire.begin();
@@ -250,6 +357,8 @@ void setup()
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(MUTE_PIN, INPUT_PULLDOWN);
   digitalWrite(BUZZER_PIN, LOW);
+
+  setupBle();
 
   // Initialize SPIFFS
   if (!SPIFFS.begin(true))
@@ -399,6 +508,34 @@ void loop()
   }
   // D0 is HIGH when dark, LOW when the lamp is on
   bool lampIsOn = (digitalRead(SENSOR_PIN) == LOW);
+
+  // Следене за промяна в Wi-Fi връзката
+  bool wifiConnected = WiFi.status() == WL_CONNECTED;
+
+  if (!bleWifiStateKnown) {
+    bleWifiStateKnown = true;
+    lastBleWifiConnected = wifiConnected;
+  }
+  else if (wifiConnected != lastBleWifiConnected) {
+    lastBleWifiConnected = wifiConnected;
+
+    sendBleEvent(
+        wifiConnected ? "WIFI_OK" : "WIFI_LOST"
+    );
+  }
+
+  // Събитие при промяна на лампата
+  if (lampIsOn != lampWasOn) {
+    sendBleEvent(
+        lampIsOn ? "LAMP_ON" : "LAMP_OFF"
+    );
+  }
+
+  // Обновяване на четимия статус веднъж в секунда
+  if (now - lastBleStatusUpdate >= 1000) {
+    lastBleStatusUpdate = now;
+    updateBleStatus(now, lampIsOn, muted);
+  }
 
   if (lampIsOn) {
     if (muted) {
