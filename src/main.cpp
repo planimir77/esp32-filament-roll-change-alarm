@@ -334,8 +334,8 @@ void setupBle() {
 
   bleStatusCharacteristic->setValue("STARTING");
   bleEventCharacteristic->setValue("BOOT");
-
-  service->start();
+  
+  bleServer->start();
 
   NimBLEAdvertising* advertising =
       NimBLEDevice::getAdvertising();
