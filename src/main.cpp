@@ -22,7 +22,6 @@
 #include <SPIFFS.h>
 #include <ESPAsyncWebServer.h>
 #include <USSensor.h>
-#include <MainPage.h>
 #include <HttpGETRequest.h>
 #include <stdio.h>
 #include <time.h>
@@ -30,11 +29,6 @@
 #include <MuteTimer.h>
 #include <MuteButton.h>
 #include <secrets.h>
-
-const char *PARAM_STRING = "inputString";
-const char *PARAM_INT = "inputInt";
-const char *PARAM_FLOAT = "inputFloat";
-const char *PARAM_DIAMETER = "inputDiameter";
 
 const char* NTFY_TOPIC = "rast3d-pla"; // pick a unique name, subscribe to it in the ntfy app
 //const char* NTFY_TOPIC = "rast3d-pla-test";
@@ -225,30 +219,6 @@ void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
   }
 }
 
-// Replaces placeholder with stored values
-String processor(const String &var)
-{
-  Serial.println(var);
-  Serial.println("processor reading file");
-  if (var == "inputString")
-  {
-    return readFile(SPIFFS, "/inputString.txt");
-  }
-  else if (var == "inputInt")
-  {
-    return readFile(SPIFFS, "/inputInt.txt");
-  }
-  else if (var == "inputFloat")
-  {
-    return readFile(SPIFFS, "/inputFloat.txt");
-  }
-  else if (var == "inputDiameter")
-  {
-    return readFile(SPIFFS, "/inputDiameter.txt");
-  }
-  return String();
-}
-
 void sendPushNotification(const char* message, bool lowPriority = false);
 
 // Copy text into the queue so temporary IP strings remain safe to send later.
@@ -300,8 +270,6 @@ void setup()
     queueNotification("Ако лампата в момента не свети, значи има проблем с датчика.");
   }
 
-  
-
   // Send web page with input fields to client
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
             { request->send(SPIFFS, "/index.html", "text/html; charset=utf-8"); });
@@ -314,7 +282,6 @@ void setup()
     requestMute();
     request->send(202, "application/json", "{\"accepted\":true}");
   });
-  //{ request->send_P(200, "text/html", index_html2, processor); });
 
   // Send Css
   server.on("/stylesheets/main.css", HTTP_GET, [](AsyncWebServerRequest *request)
