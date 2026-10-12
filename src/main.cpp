@@ -31,9 +31,6 @@
 #include <NimBLEDevice.h>
 #include <secrets.h>
 
-const char* NTFY_TOPIC = "rast3d-pla"; // pick a unique name, subscribe to it in the ntfy app
-//const char* NTFY_TOPIC = "rast3d-pla-test";
-
 // ==== PINS ====
 const int SENSOR_PIN = 13;   // D0 from K2055
 const int BUZZER_PIN = 5;   // to the buzzer circuit
@@ -351,7 +348,7 @@ void setupBle() {
 void setup()
 {
   Wire.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Starting...");
   pinMode(SENSOR_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
@@ -368,7 +365,8 @@ void setup()
   }
 
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
+  // Wi-Fi modem sleep is required when Wi-Fi and BLE share the radio.
+  WiFi.setSleep(true);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.onEvent(onWifiGotIP, ARDUINO_EVENT_WIFI_STA_GOT_IP);
