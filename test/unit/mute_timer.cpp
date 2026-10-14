@@ -38,34 +38,34 @@ int main() {
   CHECK(!timer.active());
   timer.update(1000, true);
   CHECK(timer.active());
-  CHECK(timer.remainingSeconds(1000) == 30);
-  CHECK(timer.remainingSeconds(1001) == 30);
-  CHECK(timer.remainingSeconds(2000) == 29);
-  CHECK(timer.remainingSeconds(30999) == 1);
+  CHECK(timer.remainingSeconds(1000) == 120);
+  CHECK(timer.remainingSeconds(1001) == 120);
+  CHECK(timer.remainingSeconds(2000) == 119);
+  CHECK(timer.remainingSeconds(120999) == 1);
   timer.update(2000, true); // Button bounce must not restart the countdown.
-  CHECK(timer.remainingSeconds(2000) == 29);
-  timer.update(30999, false);
+  CHECK(timer.remainingSeconds(2000) == 119);
+  timer.update(120999, false);
   CHECK(timer.active());
-  CHECK(timer.remainingSeconds(31000) == 0); // HTTP read before next loop.
-  timer.update(31000, false);
+  CHECK(timer.remainingSeconds(121000) == 0); // HTTP read before next loop.
+  timer.update(121000, false);
   CHECK(!timer.active());
-  timer.update(32000, true);
+  timer.update(122000, true);
   CHECK(timer.active());
-  CHECK(timer.remainingSeconds(32000) == 30);
-  timer.update(62000, true); // Request during an active interval is consumed.
+  CHECK(timer.remainingSeconds(122000) == 120);
+  timer.update(242000, true); // Request during an active interval is consumed.
   CHECK(!timer.active());
-  timer.update(62001, true);
-  CHECK(timer.remainingSeconds(62001) == 30);
+  timer.update(242001, true);
+  CHECK(timer.remainingSeconds(242001) == 120);
 
   MuteTimer rollover;
   const uint32_t start = UINT32_MAX - 10000;
   rollover.update(start, true);
-  CHECK(rollover.remainingSeconds(uint32_t(start + 10001)) == 20);
-  rollover.update(uint32_t(start + 29999), false);
+  CHECK(rollover.remainingSeconds(uint32_t(start + 10001)) == 110);
+  rollover.update(uint32_t(start + 119999), false);
   CHECK(rollover.active());
-  CHECK(rollover.remainingSeconds(uint32_t(start + 29999)) == 1);
-  rollover.update(uint32_t(start + 30000), false);
+  CHECK(rollover.remainingSeconds(uint32_t(start + 119999)) == 1);
+  rollover.update(uint32_t(start + 120000), false);
   CHECK(!rollover.active());
-  CHECK(rollover.remainingSeconds(uint32_t(start + 30000)) == 0);
+  CHECK(rollover.remainingSeconds(uint32_t(start + 120000)) == 0);
   puts("PASS: mute button and timer (43 assertions, including millis rollover)");
 }

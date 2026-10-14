@@ -4,7 +4,7 @@
 // Call under stateMux when shared between the loop and HTTP task.
 class MuteTimer {
  public:
-  static constexpr uint32_t durationMs = 30000;
+  static constexpr uint32_t durationMs = 120000;
 
   void update(uint32_t now, bool requested) {
     // Preserve the existing rule: presses during a pause do not extend it.

@@ -23,6 +23,6 @@ try:
     run(compiler + ["-std=c++11", "-Wall", "-Wextra", "-Werror", "-I", "include",
                     "test/unit/mute_timer.cpp", "-o", str(binary)])
     run([str(binary)])
-    run([node, "--test", "test/unit/dashboard.test.cjs"])
+    run([node, "--test", "test/unit/dashboard.test.cjs", "test/unit/web_ota.test.cjs"])
 except subprocess.CalledProcessError as error:
     sys.exit(error.returncode)

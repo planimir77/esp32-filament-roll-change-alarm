@@ -6,8 +6,8 @@
   - Includes retry logic for weak/slow internet connections
 
   Wiring:
-  - K2055 D0  -> GPIO 13  (input, dark=HIGH, light=LOW)
-  - Buzzer "+" -> GPIO 5  (output, through a 1kΩ resistor to the base of BC547
+  - K2055 D0  -> GPIO 15  (input, dark=HIGH, light=LOW)
+  - Buzzer "+" -> GPIO 12  (output, through a 1kΩ resistor to the base of BC547
                            if the buzzer draws more current than the GPIO pin can supply;
                            ESP32 GPIO handles ~12mA, small buzzers under 12mA
                            can be connected directly to the GPIO)
@@ -28,12 +28,13 @@
 #include <esp_timer.h>
 #include <MuteTimer.h>
 #include <MuteButton.h>
+#include <WebOta.h>
 #include <NimBLEDevice.h>
 #include <secrets.h>
 
 // ==== PINS ====
-const int SENSOR_PIN = 13;   // D0 from K2055
-const int BUZZER_PIN = 5;   // to the buzzer circuit
+const int SENSOR_PIN = 15;   // D0 from K2055
+const int BUZZER_PIN = 12;   // to the buzzer circuit
 const int MUTE_PIN = 27;    // apply 3.3 V to temporarily silence the buzzer
 
 // ==== BUZZER PULSE TIMING ====
@@ -45,6 +46,9 @@ const int LONG_PAUSE_MS  = 2000;   // long pause after the second beep, before t
 bool lampWasOn = false;        // whether the lamp was on in the previous loop cycle
 unsigned long lastStepChange = 0;
 bool isNotificationSent = false;
+const unsigned long NOTIFICATION_INTERVAL_MS = 120000UL;
+unsigned long lastAlarmNotificationAt = 0;
+bool hasQueuedAlarmNotification = false;
 
 // Pattern steps: 0 = beep, 1 = short pause, 2 = beep, 3 = long pause (then repeats)
 int patternStep = 0;
@@ -179,6 +183,20 @@ String readFile(fs::FS &fs, const char *path)
   Serial.println("reading done");
   file.close();
   return fileContent;
+}
+
+// Buffer these small UI files so no response holds an open SPIFFS file during OTA.
+void sendInterfaceFile(AsyncWebServerRequest* request, const char* path, const char* contentType) {
+  if (!webOtaFilesystemAvailable()) {
+    request->send(503, "text/html; charset=utf-8",
+                  "Интерфейсът временно не е достъпен. <a href='/update'>Обновяване / възстановяване</a>");
+    return;
+  }
+  if (!SPIFFS.exists(path)) {
+    request->send(404, "text/plain; charset=utf-8", "Липсва файл. Качете spiffs.bin през /update.");
+    return;
+  }
+  request->send(200, contentType, readFile(SPIFFS, path));
 }
 
 void writeFile(fs::FS &fs, const char *path, const char *message)
@@ -358,10 +376,10 @@ void setup()
   setupBle();
 
   // Initialize SPIFFS
-  if (!SPIFFS.begin(true))
+  bool filesystemMounted = SPIFFS.begin(false);
+  if (!filesystemMounted)
   {
-    Serial.println("An Error has occurred while mounting SPIFFS");
-    return;
+    Serial.println("SPIFFS unavailable; recover through /update");
   }
 
   WiFi.mode(WIFI_STA);
@@ -385,9 +403,11 @@ void setup()
     queueNotification("Ако лампата в момента не свети, значи има проблем с датчика.");
   }
 
+  setupWebOta(server, filesystemMounted);
+
   // Send web page with input fields to client
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(SPIFFS, "/index.html", "text/html; charset=utf-8"); });
+            { sendInterfaceFile(request, "/index.html", "text/html; charset=utf-8"); });
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
     AsyncWebServerResponse* response = request->beginResponse(200, "application/json; charset=utf-8", statusJson());
     response->addHeader("Cache-Control", "no-store");
@@ -400,12 +420,12 @@ void setup()
 
   // Send Css
   server.on("/stylesheets/main.css", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/css", readFile(SPIFFS, "/stylesheets/main.css")); });
+            { sendInterfaceFile(request, "/stylesheets/main.css", "text/css"); });
   // Send Javascript
   server.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/javascript", readFile(SPIFFS, "/index.js")); });
+            { sendInterfaceFile(request, "/index.js", "text/javascript"); });
   server.on("/getDiameter", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/plain", readFile(SPIFFS, "/inputDiameter.txt")); });
+            { sendInterfaceFile(request, "/inputDiameter.txt", "text/plain"); });
   server.onNotFound(notFound);
   server.begin();
 }
@@ -468,6 +488,7 @@ void sendPushNotification(const char* message, bool lowPriority) {
 
 void loop()
 {
+  pollWebOta();
   unsigned long now = millis();
 
   if (WiFi.status() != WL_CONNECTED &&
@@ -543,8 +564,15 @@ void loop()
     } else {
       pulseBuzzer();
     }
-    if (!isNotificationSent) {
+    // Brief sensor dropouts must not cause another alert within two minutes.
+    bool notificationIntervalElapsed = !hasQueuedAlarmNotification ||
+        now - lastAlarmNotificationAt >= NOTIFICATION_INTERVAL_MS;
+    if (!isNotificationSent && notificationIntervalElapsed) {
       isNotificationSent = queueNotification("Предстои смяна на ролката.");
+      if (isNotificationSent) {
+        lastAlarmNotificationAt = now;
+        hasQueuedAlarmNotification = true;
+      }
     }
   } else {
     digitalWrite(BUZZER_PIN, LOW);
